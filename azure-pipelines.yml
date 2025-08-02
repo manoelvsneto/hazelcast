@@ -35,6 +35,15 @@ variables:
   # Configurações do Docker Hub Cleanup
   DOCKERHUB_USERNAME: 'manoelvsneto'
   DOCKERHUB_REPOSITORY: 'hazelcast-client'
+  
+  # Configurações do SQL Server Azure - CONFIGURE NO AZURE DEVOPS
+  SQL_SERVER_HOST: 'your-server.database.windows.net'
+  SQL_SERVER_DATABASE: 'hazelcast_db'
+  SQL_SERVER_USERNAME: 'hazelcast-admin'
+  
+  # Configurações do Azure Service Bus - CONFIGURE NO AZURE DEVOPS  
+  SERVICE_BUS_NAMESPACE: 'your-servicebus-namespace.servicebus.windows.net'
+  SERVICE_BUS_QUEUE: 'hazelcast-events'
 
 stages:
 - stage: Build
@@ -214,10 +223,26 @@ stages:
           
           - script: |
               # Substituir placeholders nos manifestos
+              
+              # 1. Substituir imagem Docker
               sed -i "s|localhost:32000/hazelcast-client:latest|$(imageRepository):$(tag)|g" $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml
-              echo "Manifest atualizado:"
+              
+              # 2. Substituir configurações SQL Server
+              sed -i "s|__SQL_SERVER_HOST__|$(SQL_SERVER_HOST)|g" $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml
+              sed -i "s|__SQL_SERVER_DATABASE__|$(SQL_SERVER_DATABASE)|g" $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml
+              sed -i "s|__SQL_SERVER_USERNAME__|$(SQL_SERVER_USERNAME)|g" $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml
+              sed -i "s|__SQL_SERVER_PASSWORD__|$(SQL_SERVER_PASSWORD)|g" $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml
+              
+              # 3. Substituir configurações Service Bus
+              sed -i "s|__SERVICE_BUS_NAMESPACE__|$(SERVICE_BUS_NAMESPACE)|g" $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml
+              sed -i "s|__SERVICE_BUS_ACCESS_KEY__|$(SERVICE_BUS_ACCESS_KEY)|g" $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml
+              sed -i "s|__SERVICE_BUS_QUEUE__|$(SERVICE_BUS_QUEUE)|g" $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml
+              
+              echo "========================="
+              echo "Manifest atualizado com variáveis do pipeline:"
+              echo "========================="
               cat $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml
-            displayName: 'Update Manifest with New Image'
+            displayName: 'Update Manifest with Pipeline Variables'
           
           - script: |
               # Debug: Verificar conectividade com cluster

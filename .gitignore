@@ -129,3 +129,22 @@ Thumbs.db
 
 # Hazelcast specific
 hazelcast-*.log
+
+# Azure DevOps and Pipeline secrets
+*.env
+.env
+.env.local
+.env.production
+.env.development
+secrets.yaml
+secrets.json
+
+# Kubernetes secrets (if generated locally)
+*-secret.yaml
+azure-sql-secret.yaml
+azure-servicebus-secret.yaml
+
+# Local configuration files with sensitive data
+config.local.*
+settings.local.*
+application-local.*
