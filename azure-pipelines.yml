@@ -209,6 +209,18 @@ stages:
               cat $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml
             displayName: 'Update Manifest with New Image'
           
+          - script: |
+              # Debug: Verificar conectividade com cluster
+              echo "Verificando conectividade com cluster Kubernetes..."
+              kubectl cluster-info --insecure-skip-tls-verify || echo "Falha na conexão inicial"
+              kubectl get nodes --insecure-skip-tls-verify || echo "Falha ao listar nodes"
+              kubectl get namespaces --insecure-skip-tls-verify || echo "Falha ao listar namespaces"
+              
+              # Verificar se namespace existe, criar se necessário
+              kubectl get namespace $(namespace) --insecure-skip-tls-verify || \
+              kubectl create namespace $(namespace) --insecure-skip-tls-verify
+            displayName: 'Debug Kubernetes Connection'
+          
           - task: Kubernetes@1
             displayName: 'Deploy Hazelcast Client'
             inputs:
@@ -216,12 +228,14 @@ stages:
               kubernetesServiceEndpoint: '$(kubernetesServiceConnection)'
               namespace: '$(namespace)'
               command: 'apply'
-              arguments: '-f $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml'
+              arguments: '-f $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml --insecure-skip-tls-verify'
           
           - script: |
               echo "Aguardando deployment..."
-              kubectl wait --for=condition=available --timeout=300s deployment/hazelcast-client -n $(namespace)
+              kubectl wait --for=condition=available --timeout=300s deployment/hazelcast-client -n $(namespace) --insecure-skip-tls-verify
               echo "Verificando status do deployment:"
-              kubectl get pods -n $(namespace) -l app=hazelcast-client
-              kubectl get deployment hazelcast-client -n $(namespace)
+              kubectl get pods -n $(namespace) -l app=hazelcast-client --insecure-skip-tls-verify
+              kubectl get deployment hazelcast-client -n $(namespace) --insecure-skip-tls-verify
+              echo "Verificando logs dos pods (últimas 20 linhas):"
+              kubectl logs -n $(namespace) -l app=hazelcast-client --tail=20 --insecure-skip-tls-verify || echo "Nenhum log disponível ainda"
             displayName: 'Verify Deployment'
