@@ -3,7 +3,7 @@
 pool:
   name: Arm64
   vmImage: 'ubuntu-22.04'
-  
+
 trigger:
   branches:
     include:
@@ -37,9 +37,10 @@ stages:
   displayName: 'Build Application'
   jobs:
   - job: BuildJob
-    displayName: 'Build and Test  '
+    displayName: 'Build and Test'
     pool:
-      vmImage: 'ubuntu-latest'
+      name: Arm64
+      vmImage: 'ubuntu-22.04'
     
     steps:
     - task: JavaToolInstaller@0
@@ -92,7 +93,8 @@ stages:
   - job: DockerJob
     displayName: 'Docker Build and Push'
     pool:
-      vmImage: 'ubuntu-latest'
+      name: Arm64
+      vmImage: 'ubuntu-22.04'
     
     steps:
     - task: DownloadBuildArtifacts@0
@@ -122,7 +124,8 @@ stages:
   - deployment: DeployJob
     displayName: 'Deploy to Kubernetes'
     pool:
-      vmImage: 'ubuntu-latest'
+      name: Arm64
+      vmImage: 'ubuntu-22.04'
     environment: 'microk8s-cluster'
     strategy:
       runOnce:
