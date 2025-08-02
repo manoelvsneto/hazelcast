@@ -191,6 +191,65 @@ stages:
           latest
         arguments: '--platform linux/arm64'
 
+- stage: Deploy
+  displayName: 'Deploy to MicroK8s'
+  dependsOn: DockerHubCleanup
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - deployment: DeployJob
+    displayName: 'Deploy to Kubernetes'
+    pool:
+      name: Arm64
+      vmImage: 'ubuntu-22.04'
+    environment: 'microk8s-cluster'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: DownloadBuildArtifacts@0
+            displayName: 'Download Artifacts'
+            inputs:
+              artifactName: 'drop'
+              downloadPath: '$(System.ArtifactsDirectory)'
+          
+          - script: |
+              # Substituir placeholders nos manifestos
+              sed -i "s|localhost:32000/hazelcast-client:latest|$(imageRepository):$(tag)|g" $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml
+              echo "Manifest atualizado:"
+              cat $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml
+            displayName: 'Update Manifest with New Image'
+          
+          - script: |
+              # Debug: Verificar conectividade com cluster
+              echo "Verificando conectividade com cluster Kubernetes..."
+              microk8s kubectl cluster-info --insecure-skip-tls-verify || echo "Falha na conexão inicial"
+              microk8s kubectl get nodes --insecure-skip-tls-verify || echo "Falha ao listar nodes"
+              microk8s kubectl get namespaces --insecure-skip-tls-verify || echo "Falha ao listar namespaces"
+              
+              # Verificar se namespace existe, criar se necessário
+              microk8s kubectl get namespace $(namespace) --insecure-skip-tls-verify || \
+              microk8s kubectl create namespace $(namespace) --insecure-skip-tls-verify
+            displayName: 'Debug Kubernetes Connection'
+          
+          - task: Kubernetes@1
+            displayName: 'Deploy Hazelcast Client'
+            inputs:
+              connectionType: 'Kubernetes Service Connection'
+              kubernetesServiceEndpoint: '$(kubernetesServiceConnection)'
+              namespace: '$(namespace)'
+              command: 'apply'
+              arguments: '-f $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml --insecure-skip-tls-verify'
+          
+          - script: |
+              echo "Aguardando deployment..."
+              microk8s kubectl wait --for=condition=available --timeout=300s deployment/hazelcast-client -n $(namespace) --insecure-skip-tls-verify
+              echo "Verificando status do deployment:"
+              microk8s kubectl get pods -n $(namespace) -l app=hazelcast-client --insecure-skip-tls-verify
+              microk8s kubectl get deployment hazelcast-client -n $(namespace) --insecure-skip-tls-verify
+              echo "Verificando logs dos pods (últimas 20 linhas):"
+              microk8s kubectl logs -n $(namespace) -l app=hazelcast-client --tail=20 --insecure-skip-tls-verify || echo "Nenhum log disponível ainda"
+            displayName: 'Verify Deployment'
+
 - stage: DockerHubCleanup
   displayName: '🧹 Docker Hub Cleanup'
   dependsOn: Docker
@@ -346,62 +405,3 @@ stages:
         DOCKERHUB_USERNAME: $(DOCKERHUB_USERNAME)
         DOCKERHUB_PASSWORD: $(DOCKERHUB_PASSWORD)  # 💡 Variável secreta definida no pipeline
         DOCKERHUB_REPOSITORY: $(DOCKERHUB_REPOSITORY)
-
-- stage: Deploy
-  displayName: 'Deploy to MicroK8s'
-  dependsOn: DockerHubCleanup
-  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
-  jobs:
-  - deployment: DeployJob
-    displayName: 'Deploy to Kubernetes'
-    pool:
-      name: Arm64
-      vmImage: 'ubuntu-22.04'
-    environment: 'microk8s-cluster'
-    strategy:
-      runOnce:
-        deploy:
-          steps:
-          - task: DownloadBuildArtifacts@0
-            displayName: 'Download Artifacts'
-            inputs:
-              artifactName: 'drop'
-              downloadPath: '$(System.ArtifactsDirectory)'
-          
-          - script: |
-              # Substituir placeholders nos manifestos
-              sed -i "s|localhost:32000/hazelcast-client:latest|$(imageRepository):$(tag)|g" $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml
-              echo "Manifest atualizado:"
-              cat $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml
-            displayName: 'Update Manifest with New Image'
-          
-          - script: |
-              # Debug: Verificar conectividade com cluster
-              echo "Verificando conectividade com cluster Kubernetes..."
-              microk8s kubectl cluster-info --insecure-skip-tls-verify || echo "Falha na conexão inicial"
-              microk8s kubectl get nodes --insecure-skip-tls-verify || echo "Falha ao listar nodes"
-              microk8s kubectl get namespaces --insecure-skip-tls-verify || echo "Falha ao listar namespaces"
-              
-              # Verificar se namespace existe, criar se necessário
-              microk8s kubectl get namespace $(namespace) --insecure-skip-tls-verify || \
-              microk8s kubectl create namespace $(namespace) --insecure-skip-tls-verify
-            displayName: 'Debug Kubernetes Connection'
-          
-          - task: Kubernetes@1
-            displayName: 'Deploy Hazelcast Client'
-            inputs:
-              connectionType: 'Kubernetes Service Connection'
-              kubernetesServiceEndpoint: '$(kubernetesServiceConnection)'
-              namespace: '$(namespace)'
-              command: 'apply'
-              arguments: '-f $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml --insecure-skip-tls-verify'
-          
-          - script: |
-              echo "Aguardando deployment..."
-              microk8s kubectl wait --for=condition=available --timeout=300s deployment/hazelcast-client -n $(namespace) --insecure-skip-tls-verify
-              echo "Verificando status do deployment:"
-              microk8s kubectl get pods -n $(namespace) -l app=hazelcast-client --insecure-skip-tls-verify
-              microk8s kubectl get deployment hazelcast-client -n $(namespace) --insecure-skip-tls-verify
-              echo "Verificando logs dos pods (últimas 20 linhas):"
-              microk8s kubectl logs -n $(namespace) -l app=hazelcast-client --tail=20 --insecure-skip-tls-verify || echo "Nenhum log disponível ainda"
-            displayName: 'Verify Deployment'
