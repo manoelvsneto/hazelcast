@@ -234,14 +234,6 @@ stages:
               microk8s kubectl create namespace $(namespace) --insecure-skip-tls-verify
             displayName: 'Debug Kubernetes Connection'
           
-          - task: Kubernetes@1
-            displayName: 'Apply Secrets'
-            inputs:
-              connectionType: 'Kubernetes Service Connection'
-              kubernetesServiceEndpoint: '$(kubernetesServiceConnection)'
-              namespace: '$(namespace)'
-              command: 'apply'
-              arguments: '-f $(System.ArtifactsDirectory)/drop/k8s/hazelcast-secrets.yaml --insecure-skip-tls-verify'
           
           - task: Kubernetes@1
             displayName: 'Deploy Hazelcast Client'

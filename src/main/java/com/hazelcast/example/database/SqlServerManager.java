@@ -144,6 +144,60 @@ public class SqlServerManager {
     }
     
     /**
+     * Executa uma operação UPSERT (INSERT ou UPDATE) usando MERGE do SQL Server
+     * @param tableName Nome da tabela
+     * @param keyColumn Coluna que será usada como chave para verificar se o registro existe
+     * @param columns Array com os nomes das colunas (incluindo a chave)
+     * @param values Array com os valores correspondentes às colunas
+     * @return Número de linhas afetadas
+     */
+    public int executeUpsert(String tableName, String keyColumn, String[] columns, Object[] values) {
+        if (columns.length != values.length) {
+            throw new IllegalArgumentException("Number of columns must match number of values");
+        }
+        
+        // Construir a query MERGE dinamicamente
+        StringBuilder mergeQuery = new StringBuilder();
+        mergeQuery.append("MERGE ").append(tableName).append(" AS target ");
+        mergeQuery.append("USING (SELECT ");
+        
+        // Adicionar SELECTs para os valores
+        for (int i = 0; i < columns.length; i++) {
+            if (i > 0) mergeQuery.append(", ");
+            mergeQuery.append("? AS ").append(columns[i]);
+        }
+        
+        mergeQuery.append(") AS source ");
+        mergeQuery.append("ON target.").append(keyColumn).append(" = source.").append(keyColumn).append(" ");
+        
+        // WHEN MATCHED (UPDATE)
+        mergeQuery.append("WHEN MATCHED THEN UPDATE SET ");
+        boolean first = true;
+        for (String column : columns) {
+            if (!column.equals(keyColumn)) {  // Não atualizar a chave
+                if (!first) mergeQuery.append(", ");
+                mergeQuery.append(column).append(" = source.").append(column);
+                first = false;
+            }
+        }
+        
+        // WHEN NOT MATCHED (INSERT)
+        mergeQuery.append(" WHEN NOT MATCHED THEN INSERT (");
+        for (int i = 0; i < columns.length; i++) {
+            if (i > 0) mergeQuery.append(", ");
+            mergeQuery.append(columns[i]);
+        }
+        mergeQuery.append(") VALUES (");
+        for (int i = 0; i < columns.length; i++) {
+            if (i > 0) mergeQuery.append(", ");
+            mergeQuery.append("source.").append(columns[i]);
+        }
+        mergeQuery.append(");");
+        
+        return executeUpdate(mergeQuery.toString(), values);
+    }
+    
+    /**
      * Fecha o pool de conexões
      */
     public void shutdown() {

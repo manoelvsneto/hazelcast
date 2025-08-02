@@ -188,14 +188,11 @@ public class HazelcastAzureIntegratedClient {
             // Armazenar no Hazelcast
             userMap.put(userId, user);
             
-            // Persistir no SQL Server
+            // Persistir no SQL Server usando método helper UPSERT
             if (sqlServerManager != null) {
-                sqlServerManager.executeUpdate(
-                    "INSERT INTO users (user_id, username, email, last_login) VALUES (?, ?, ?, ?)" +
-                    " ON DUPLICATE KEY UPDATE username=?, email=?, last_login=?",
-                    userId, user.getUsername(), user.getEmail(), LocalDateTime.now(),
-                    user.getUsername(), user.getEmail(), LocalDateTime.now()
-                );
+                String[] columns = {"user_id", "username", "email", "last_login"};
+                Object[] values = {userId, user.getUsername(), user.getEmail(), LocalDateTime.now()};
+                sqlServerManager.executeUpsert("users", "user_id", columns, values);
             }
             
             // Enviar evento
