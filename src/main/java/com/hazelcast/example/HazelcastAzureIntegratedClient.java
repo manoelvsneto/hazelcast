@@ -53,14 +53,67 @@ public class HazelcastAzureIntegratedClient {
     }
     
     private void initializeHazelcast() {
+        try {
+            // Verificar se deve usar modo embedded (standalone)
+            boolean useEmbedded = Boolean.parseBoolean(getEnvVar("HAZELCAST_EMBEDDED_MODE", "true"));
+            
+            if (useEmbedded) {
+                logger.info("Initializing Hazelcast in embedded mode (local instance)...");
+                initializeEmbeddedHazelcast();
+            } else {
+                logger.info("Initializing Hazelcast in client mode (connecting to external server)...");
+                initializeClientMode();
+            }
+            
+            logger.info("Connected to Hazelcast cluster: {}", hazelcastClient.getName());
+            
+            // Enviar evento de conexão
+            if (serviceBusManager != null) {
+                serviceBusManager.sendSystemEvent("Hazelcast", "INFO", "Client connected to cluster");
+            }
+            
+        } catch (Exception e) {
+            logger.error("Failed to initialize Hazelcast, falling back to embedded mode", e);
+            try {
+                initializeEmbeddedHazelcast();
+                logger.info("Successfully initialized Hazelcast in embedded fallback mode");
+                
+                // Enviar evento de fallback
+                if (serviceBusManager != null) {
+                    serviceBusManager.sendSystemEvent("Hazelcast", "WARN", "Fallback to embedded mode");
+                }
+            } catch (Exception fallbackException) {
+                logger.error("Failed to initialize embedded Hazelcast", fallbackException);
+                throw new RuntimeException("Unable to initialize Hazelcast in any mode", fallbackException);
+            }
+        }
+    }
+    
+    private void initializeEmbeddedHazelcast() {
+        logger.info("Creating embedded Hazelcast instance...");
+        
+        com.hazelcast.config.Config config = new com.hazelcast.config.Config();
+        String clusterName = getEnvVar("HAZELCAST_CLUSTER_NAME", "dev");
+        config.setClusterName(clusterName);
+        
+        // Configurações para ambiente embarcado
+        config.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
+        config.getNetworkConfig().getJoin().getTcpIpConfig().setEnabled(true);
+        config.getNetworkConfig().getJoin().getTcpIpConfig().addMember("127.0.0.1");
+        
+        // Configurar para desenvolvimento
+        config.setProperty("hazelcast.logging.type", "slf4j");
+        config.setProperty("hazelcast.operation.call.timeout.millis", "30000");
+        
+        hazelcastClient = com.hazelcast.core.Hazelcast.newHazelcastInstance(config);
+        logger.info("Embedded Hazelcast instance created successfully for cluster '{}'", clusterName);
+    }
+    
+    private void initializeClientMode() {
+        logger.info("Connecting to external Hazelcast server...");
         ClientConfig clientConfig = createClientConfig();
         this.hazelcastClient = HazelcastClient.newHazelcastClient(clientConfig);
-        logger.info("Connected to Hazelcast cluster: {}", hazelcastClient.getName());
-        
-        // Enviar evento de conexão
-        if (serviceBusManager != null) {
-            serviceBusManager.sendSystemEvent("Hazelcast", "INFO", "Client connected to cluster");
-        }
+        logger.info("Connected to external Hazelcast cluster successfully");
     }
     
     private void initializeSqlServer() {
