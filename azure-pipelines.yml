@@ -1,6 +1,9 @@
 # Azure DevOps Pipeline para Hazelcast Client no MicroK8s
 # Pipeline para build e deploy apenas do cliente Hazelcast
-
+pool:
+  name: Arm64
+  vmImage: 'ubuntu-22.04'
+  
 trigger:
   branches:
     include:
