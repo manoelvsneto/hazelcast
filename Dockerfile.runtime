@@ -1,7 +1,7 @@
 # Runtime Dockerfile para JAR pré-compilado ARM64
 # Este Dockerfile assume que o JAR já foi compilado e está no contexto de build
 
-FROM --platform=linux/arm64 eclipse-temurin:11-jre
+FROM --platform=linux/arm64 eclipse-temurin:17-jre
 
 WORKDIR /app
 

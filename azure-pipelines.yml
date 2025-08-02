@@ -19,7 +19,7 @@ trigger:
 variables:
   # Configurações básicas
   mavenPomFile: 'pom.xml'
-  javaVersion: '11'
+  javaVersion: '17'
   
   # Configurações do Docker - CONFIGURE ESTAS VARIÁVEIS
   dockerRegistryServiceConnection: 'DockerConnection'  # Nome da service connection no Azure DevOps
@@ -48,15 +48,15 @@ stages:
     
     steps:
     - script: |
-        # Verificar se Java 11 está disponível
+        # Verificar se Java 17 está disponível
         if command -v java &> /dev/null; then
           echo "Java encontrado: $(java -version 2>&1 | head -1)"
           export JAVA_HOME=$(readlink -f /usr/bin/java | sed "s:bin/java::")
         else
-          echo "Instalando OpenJDK 11..."
+          echo "Instalando OpenJDK 17..."
           sudo apt-get update
-          sudo apt-get install -y openjdk-11-jdk
-          export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-arm64
+          sudo apt-get install -y openjdk-17-jdk
+          export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-arm64
         fi
         
         # Verificar se Maven está disponível
@@ -69,7 +69,7 @@ stages:
         echo "JAVA_HOME set to: $JAVA_HOME"
         java -version
         mvn -version
-      displayName: 'Setup Java 11 and Maven'
+      displayName: 'Setup Java 17 and Maven'
     
     - script: |
         mvn clean compile
@@ -134,7 +134,7 @@ stages:
         # Criar Dockerfile otimizado para usar JAR pré-compilado
         cat > Dockerfile.runtime <<EOF
         # Runtime Dockerfile para JAR pré-compilado
-        FROM --platform=linux/arm64 eclipse-temurin:11-jre
+        FROM --platform=linux/arm64 eclipse-temurin:17-jre
         
         WORKDIR /app
         
