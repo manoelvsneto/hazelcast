@@ -151,25 +151,31 @@ stages:
         RUN mkdir -p /app/logs && \\
             chown -R hazelcast:hazelcast /app
         
-        # Copy JAR from build artifacts
-        COPY target/*.jar app.jar
+        # Copy JAR from build artifacts (procura por JAR shaded)
+        COPY target/hazelcast-project-*.jar app.jar
         
         # Set user
         USER hazelcast
         
-        # Health check
-        HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \\
-            CMD curl -f http://localhost:8080/health || exit 1
+        # Environment variables
+        ENV JAVA_OPTS="-Xmx512m -Xms256m -Dhazelcast.logging.type=slf4j"
+        
+        # Health check (comentado até implementar endpoint)
+        # HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \\
+        #     CMD curl -f http://localhost:8080/health || exit 1
         
         # Expose port
         EXPOSE 8080
         
-        # Run application
-        ENTRYPOINT ["java", "-jar", "app.jar"]
+        # Run application com JAVA_OPTS
+        ENTRYPOINT ["sh", "-c", "java \$JAVA_OPTS -jar app.jar"]
         EOF
         
         echo "Dockerfile.runtime criado:"
         cat Dockerfile.runtime
+        
+        echo "Listando JARs disponíveis:"
+        ls -la $(System.ArtifactsDirectory)/drop/target/
       displayName: 'Create Runtime Dockerfile'
     
     - task: Docker@2

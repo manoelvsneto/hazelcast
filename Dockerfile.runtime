@@ -18,8 +18,8 @@ RUN apt-get update && \
 RUN mkdir -p /app/logs && \
     chown -R hazelcast:hazelcast /app
 
-# Copy JAR from build artifacts
-COPY target/*.jar app.jar
+# Copy JAR from build artifacts (shaded JAR com todas as dependências)
+COPY target/hazelcast-project-*.jar app.jar
 
 # Set user
 USER hazelcast
@@ -32,7 +32,7 @@ USER hazelcast
 EXPOSE 8080
 
 # Environment variables
-ENV JAVA_OPTS="-Xmx256m -Xms128m"
+ENV JAVA_OPTS="-Xmx512m -Xms256m -Dhazelcast.logging.type=slf4j"
 
-# Run application
+# Run application with JAVA_OPTS
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
