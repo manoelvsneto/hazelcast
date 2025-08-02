@@ -54,25 +54,36 @@ stages:
           sudo apt-get install -y openjdk-11-jdk
           export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-arm64
         fi
+        
+        # Verificar se Maven está disponível
+        if ! command -v mvn &> /dev/null; then
+          echo "Instalando Maven..."
+          sudo apt-get install -y maven
+        fi
+        
         echo "##vso[task.setvariable variable=JAVA_HOME]$JAVA_HOME"
         echo "JAVA_HOME set to: $JAVA_HOME"
         java -version
-      displayName: 'Setup Java 11'
+        mvn -version
+      displayName: 'Setup Java 11 and Maven'
     
     - script: |
-        export JAVA_HOME=$JAVA_HOME
         mvn clean compile
       displayName: 'Maven Compile'
+      env:
+        JAVA_HOME: $(JAVA_HOME)
     
     - script: |
-        export JAVA_HOME=$JAVA_HOME
         mvn test
       displayName: 'Run Tests'
+      env:
+        JAVA_HOME: $(JAVA_HOME)
     
     - script: |
-        export JAVA_HOME=$JAVA_HOME
         mvn package -DskipTests
       displayName: 'Package Application'
+      env:
+        JAVA_HOME: $(JAVA_HOME)
     
     - task: PublishTestResults@2
       displayName: 'Publish Test Results'
