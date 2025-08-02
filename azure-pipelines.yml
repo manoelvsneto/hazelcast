@@ -224,25 +224,28 @@ stages:
           - script: |
               # Substituir placeholders nos manifestos
               
-              # 1. Substituir imagem Docker
+              # 1. Substituir imagem Docker no deployment
               sed -i "s|localhost:32000/hazelcast-client:latest|$(imageRepository):$(tag)|g" $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml
               
-              # 2. Substituir configurações SQL Server
-              sed -i "s|__SQL_SERVER_HOST__|$(SQL_SERVER_HOST)|g" $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml
-              sed -i "s|__SQL_SERVER_DATABASE__|$(SQL_SERVER_DATABASE)|g" $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml
-              sed -i "s|__SQL_SERVER_USERNAME__|$(SQL_SERVER_USERNAME)|g" $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml
-              sed -i "s|__SQL_SERVER_PASSWORD__|$(SQL_SERVER_PASSWORD)|g" $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml
-              
-              # 3. Substituir configurações Service Bus
-              sed -i "s|__SERVICE_BUS_NAMESPACE__|$(SERVICE_BUS_NAMESPACE)|g" $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml
-              sed -i "s|__SERVICE_BUS_ACCESS_KEY__|$(SERVICE_BUS_ACCESS_KEY)|g" $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml
-              sed -i "s|__SERVICE_BUS_QUEUE__|$(SERVICE_BUS_QUEUE)|g" $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml
+              # 2. Substituir configurações nos secrets
+              sed -i "s|__SQL_SERVER_HOST__|$(SQL_SERVER_HOST)|g" $(System.ArtifactsDirectory)/drop/k8s/hazelcast-secrets.yaml
+              sed -i "s|__SQL_SERVER_DATABASE__|$(SQL_SERVER_DATABASE)|g" $(System.ArtifactsDirectory)/drop/k8s/hazelcast-secrets.yaml
+              sed -i "s|__SQL_SERVER_USERNAME__|$(SQL_SERVER_USERNAME)|g" $(System.ArtifactsDirectory)/drop/k8s/hazelcast-secrets.yaml
+              sed -i "s|__SQL_SERVER_PASSWORD__|$(SQL_SERVER_PASSWORD)|g" $(System.ArtifactsDirectory)/drop/k8s/hazelcast-secrets.yaml
+              sed -i "s|__SERVICE_BUS_NAMESPACE__|$(SERVICE_BUS_NAMESPACE)|g" $(System.ArtifactsDirectory)/drop/k8s/hazelcast-secrets.yaml
+              sed -i "s|__SERVICE_BUS_ACCESS_KEY__|$(SERVICE_BUS_ACCESS_KEY)|g" $(System.ArtifactsDirectory)/drop/k8s/hazelcast-secrets.yaml
+              sed -i "s|__SERVICE_BUS_QUEUE__|$(SERVICE_BUS_QUEUE)|g" $(System.ArtifactsDirectory)/drop/k8s/hazelcast-secrets.yaml
               
               echo "========================="
-              echo "Manifest atualizado com variáveis do pipeline:"
+              echo "Secrets atualizados com variáveis do pipeline:"
+              echo "========================="
+              cat $(System.ArtifactsDirectory)/drop/k8s/hazelcast-secrets.yaml
+              
+              echo "========================="
+              echo "Deployment atualizado:"
               echo "========================="
               cat $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml
-            displayName: 'Update Manifest with Pipeline Variables'
+            displayName: 'Update Manifests with Pipeline Variables'
           
           - script: |
               # Debug: Verificar conectividade com cluster
@@ -255,6 +258,15 @@ stages:
               microk8s kubectl get namespace $(namespace) --insecure-skip-tls-verify || \
               microk8s kubectl create namespace $(namespace) --insecure-skip-tls-verify
             displayName: 'Debug Kubernetes Connection'
+          
+          - task: Kubernetes@1
+            displayName: 'Apply Secrets'
+            inputs:
+              connectionType: 'Kubernetes Service Connection'
+              kubernetesServiceEndpoint: '$(kubernetesServiceConnection)'
+              namespace: '$(namespace)'
+              command: 'apply'
+              arguments: '-f $(System.ArtifactsDirectory)/drop/k8s/hazelcast-secrets.yaml --insecure-skip-tls-verify'
           
           - task: Kubernetes@1
             displayName: 'Deploy Hazelcast Client'

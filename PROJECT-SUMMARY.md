@@ -67,8 +67,19 @@ microk8s kubectl get pods -l app=hazelcast-client
 ### **Azure SQL Server:**
 - Connection string configurada em secret
 - Tabelas criadas automaticamente:
-  - `users` - dados de usuários
-  - `user_events` - log de eventos
+  - `users` - dados de usuários com campos:
+    - `id` (BIGINT, PK, AUTO_INCREMENT)
+    - `user_id` (NVARCHAR(100), UNIQUE) - Chave do Hazelcast
+    - `username` (NVARCHAR(255)) - Nome do usuário
+    - `email` (NVARCHAR(255)) - Email (opcional)
+    - `created_at` (DATETIME2) - Data de criação
+    - `last_login` (DATETIME2) - Último login (opcional)
+  - `user_events` - log de eventos com campos:
+    - `id` (BIGINT, PK, AUTO_INCREMENT)
+    - `user_id` (NVARCHAR(100)) - ID do usuário
+    - `event_type` (NVARCHAR(100)) - Tipo (ADDED, UPDATED, REMOVED)
+    - `event_data` (NVARCHAR(MAX)) - Dados em JSON
+    - `created_at` (DATETIME2) - Timestamp do evento
 
 ### **Azure Service Bus:**
 - Connection string configurada em secret  

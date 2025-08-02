@@ -33,16 +33,31 @@ spec:
               value: "-Dhazelcast.logging.type=slf4j -Dhazelcast.client.failover.try.count=10"
             # SQL Server Configuration
             - name: SQL_SERVER_CONNECTION_STRING
-              value: "jdbc:sqlserver://__SQL_SERVER_HOST__:1433;databaseName=__SQL_SERVER_DATABASE__;encrypt=true;trustServerCertificate=true"
+              valueFrom:
+                secretKeyRef:
+                  name: azure-sql-secret
+                  key: connection-string
             - name: SQL_SERVER_USERNAME
-              value: "__SQL_SERVER_USERNAME__"
+              valueFrom:
+                secretKeyRef:
+                  name: azure-sql-secret
+                  key: username
             - name: SQL_SERVER_PASSWORD
-              value: "__SQL_SERVER_PASSWORD__"
+              valueFrom:
+                secretKeyRef:
+                  name: azure-sql-secret
+                  key: password
             # Service Bus Configuration
             - name: SERVICE_BUS_CONNECTION_STRING
-              value: "Endpoint=sb://__SERVICE_BUS_NAMESPACE__;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=__SERVICE_BUS_ACCESS_KEY__"
+              valueFrom:
+                secretKeyRef:
+                  name: azure-servicebus-secret
+                  key: connection-string
             - name: SERVICE_BUS_QUEUE_NAME
-              value: "__SERVICE_BUS_QUEUE__"
+              valueFrom:
+                secretKeyRef:
+                  name: azure-servicebus-secret
+                  key: queue-name
           resources:
             requests:
               memory: "256Mi"
