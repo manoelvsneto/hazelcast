@@ -31,6 +31,10 @@ variables:
   # Configurações do Kubernetes - CONFIGURE ESTAS VARIÁVEIS  
   kubernetesServiceConnection: 'K8SOracleCloud'   # Nome da service connection no Azure DevOps
   namespace: 'hazelcast'
+  
+  # Configurações do Docker Hub Cleanup
+  DOCKERHUB_USERNAME: 'manoelvsneto'
+  DOCKERHUB_REPOSITORY: 'hazelcast-client'
 
 stages:
 - stage: Build
@@ -181,9 +185,165 @@ stages:
           latest
         arguments: '--platform linux/arm64'
 
+- stage: DockerHubCleanup
+  displayName: '🧹 Docker Hub Cleanup'
+  dependsOn: Docker
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - job: CleanupJob
+    displayName: '🧹 Deletar tags antigas do Docker Hub'
+    pool:
+      name: Arm64
+      vmImage: 'ubuntu-22.04'
+    
+    steps:
+    - task: UseDotNet@2
+      displayName: 'Instalar .NET SDK'
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+        installationPath: $(Agent.ToolsDirectory)/dotnet
+
+    - script: |
+        mkdir -p cleanup
+        cd cleanup
+        dotnet new console -o DockerCleanup
+      displayName: 'Criar projeto C#'
+
+    - task: Bash@3
+      displayName: 'Inserir código C# para exclusão'
+      inputs:
+        targetType: inline
+        script: |
+          cat <<EOF > cleanup/DockerCleanup/Program.cs
+          using System;
+          using System.Net.Http;
+          using System.Net.Http.Headers;
+          using System.Text.Json;
+          using System.Text;
+          using System.Threading.Tasks;
+          using System.Collections.Generic;
+
+          class Program
+          {
+              static async Task Main()
+              {
+                  var username = Environment.GetEnvironmentVariable("DOCKERHUB_USERNAME");
+                  var password = Environment.GetEnvironmentVariable("DOCKERHUB_PASSWORD");
+                  var repository = Environment.GetEnvironmentVariable("DOCKERHUB_REPOSITORY");
+
+                  Console.WriteLine($"🐳 Iniciando limpeza do Docker Hub para {username}/{repository}");
+
+                  var client = new HttpClient();
+
+                  var loginData = new { username = username, password = password };
+                  var loginResponse = await client.PostAsync(
+                      "https://hub.docker.com/v2/users/login/",
+                      new StringContent(JsonSerializer.Serialize(loginData), Encoding.UTF8, "application/json")
+                  );
+
+                  if (!loginResponse.IsSuccessStatusCode)
+                  {
+                      Console.WriteLine($"❌ Erro ao autenticar: {loginResponse.StatusCode}");
+                      return;
+                  }
+
+                  var loginContent = await loginResponse.Content.ReadAsStringAsync();
+                  var token = JsonSerializer.Deserialize<JsonElement>(loginContent).GetProperty("token").GetString();
+                  client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("JWT", token);
+
+                  Console.WriteLine("✅ Autenticado com sucesso no Docker Hub!\n");
+
+                  var tags = new List<string>();
+                  var page = 1;
+                  var pageSize = 100;
+                  bool hasMore = true;
+
+                  while (hasMore)
+                  {
+                      var url = $"https://hub.docker.com/v2/repositories/{username}/{repository}/tags/?page={page}&page_size={pageSize}";
+                      var tagsResponse = await client.GetAsync(url);
+
+                      if (!tagsResponse.IsSuccessStatusCode)
+                      {
+                          Console.WriteLine($"❌ Erro ao obter tags: {tagsResponse.StatusCode}");
+                          return;
+                      }
+
+                      var tagsJson = await tagsResponse.Content.ReadAsStringAsync();
+                      var root = JsonSerializer.Deserialize<JsonElement>(tagsJson);
+                      var results = root.GetProperty("results");
+
+                      foreach (var tag in results.EnumerateArray())
+                      {
+                          var tagName = tag.GetProperty("name").GetString();
+                          if (tagName != "latest")
+                          {
+                              tags.Add(tagName);
+                          }
+                      }
+
+                      hasMore = root.GetProperty("next").ValueKind != JsonValueKind.Null;
+                      page++;
+                  }
+
+                  Console.WriteLine($"📋 Tags encontradas para exclusão em '{username}/{repository}':");
+                  foreach (var tag in tags)
+                  {
+                      Console.WriteLine($" - {tag}");
+                  }
+                  Console.WriteLine($"📊 Total de tags para exclusão: {tags.Count}\n");
+
+                  int deletedCount = 0;
+                  int errorCount = 0;
+
+                  foreach (var tagToDelete in tags)
+                  {
+                      var deleteUrl = $"https://hub.docker.com/v2/repositories/{username}/{repository}/tags/{tagToDelete}/";
+                      var deleteRequest = new HttpRequestMessage(HttpMethod.Delete, deleteUrl);
+                      deleteRequest.Headers.Authorization = new AuthenticationHeaderValue("JWT", token);
+
+                      var deleteResponse = await client.SendAsync(deleteRequest);
+
+                      if (deleteResponse.IsSuccessStatusCode)
+                      {
+                          Console.WriteLine($"✅ Tag '{tagToDelete}' excluída com sucesso.");
+                          deletedCount++;
+                      }
+                      else
+                      {
+                          Console.WriteLine($"❌ Erro ao excluir tag '{tagToDelete}': {deleteResponse.StatusCode}");
+                          var content = await deleteResponse.Content.ReadAsStringAsync();
+                          Console.WriteLine($"Detalhes: {content}");
+                          errorCount++;
+                      }
+                  }
+
+                  Console.WriteLine($"\n📈 Resumo da limpeza:");
+                  Console.WriteLine($"✅ Tags excluídas: {deletedCount}");
+                  Console.WriteLine($"❌ Erros: {errorCount}");
+                  Console.WriteLine($"🏷️ Tag 'latest' mantida");
+              }
+          }
+          EOF
+
+    - script: |
+        cd cleanup/DockerCleanup
+        dotnet build
+      displayName: 'Build do projeto C#'
+
+    - script: |
+        cd cleanup/DockerCleanup
+        dotnet run
+      displayName: 'Executar limpeza do Docker Hub'
+      env:
+        DOCKERHUB_USERNAME: $(DOCKERHUB_USERNAME)
+        DOCKERHUB_PASSWORD: $(DOCKERHUB_PASSWORD)  # 💡 Variável secreta definida no pipeline
+        DOCKERHUB_REPOSITORY: $(DOCKERHUB_REPOSITORY)
+
 - stage: Deploy
   displayName: 'Deploy to MicroK8s'
-  dependsOn: Docker
+  dependsOn: DockerHubCleanup
   condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
   jobs:
   - deployment: DeployJob
@@ -212,13 +372,13 @@ stages:
           - script: |
               # Debug: Verificar conectividade com cluster
               echo "Verificando conectividade com cluster Kubernetes..."
-              kubectl cluster-info --insecure-skip-tls-verify || echo "Falha na conexão inicial"
-              kubectl get nodes --insecure-skip-tls-verify || echo "Falha ao listar nodes"
-              kubectl get namespaces --insecure-skip-tls-verify || echo "Falha ao listar namespaces"
+              microk8s kubectl cluster-info --insecure-skip-tls-verify || echo "Falha na conexão inicial"
+              microk8s kubectl get nodes --insecure-skip-tls-verify || echo "Falha ao listar nodes"
+              microk8s kubectl get namespaces --insecure-skip-tls-verify || echo "Falha ao listar namespaces"
               
               # Verificar se namespace existe, criar se necessário
-              kubectl get namespace $(namespace) --insecure-skip-tls-verify || \
-              kubectl create namespace $(namespace) --insecure-skip-tls-verify
+              microk8s kubectl get namespace $(namespace) --insecure-skip-tls-verify || \
+              microk8s kubectl create namespace $(namespace) --insecure-skip-tls-verify
             displayName: 'Debug Kubernetes Connection'
           
           - task: Kubernetes@1
@@ -232,10 +392,10 @@ stages:
           
           - script: |
               echo "Aguardando deployment..."
-              kubectl wait --for=condition=available --timeout=300s deployment/hazelcast-client -n $(namespace) --insecure-skip-tls-verify
+              microk8s kubectl wait --for=condition=available --timeout=300s deployment/hazelcast-client -n $(namespace) --insecure-skip-tls-verify
               echo "Verificando status do deployment:"
-              kubectl get pods -n $(namespace) -l app=hazelcast-client --insecure-skip-tls-verify
-              kubectl get deployment hazelcast-client -n $(namespace) --insecure-skip-tls-verify
+              microk8s kubectl get pods -n $(namespace) -l app=hazelcast-client --insecure-skip-tls-verify
+              microk8s kubectl get deployment hazelcast-client -n $(namespace) --insecure-skip-tls-verify
               echo "Verificando logs dos pods (últimas 20 linhas):"
-              kubectl logs -n $(namespace) -l app=hazelcast-client --tail=20 --insecure-skip-tls-verify || echo "Nenhum log disponível ainda"
+              microk8s kubectl logs -n $(namespace) -l app=hazelcast-client --tail=20 --insecure-skip-tls-verify || echo "Nenhum log disponível ainda"
             displayName: 'Verify Deployment'
