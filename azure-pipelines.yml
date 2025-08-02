@@ -193,7 +193,7 @@ stages:
 
 - stage: Deploy
   displayName: 'Deploy to MicroK8s'
-  dependsOn: DockerHubCleanup
+  dependsOn: Docker
   condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
   jobs:
   - deployment: DeployJob
@@ -252,7 +252,7 @@ stages:
 
 - stage: DockerHubCleanup
   displayName: '🧹 Docker Hub Cleanup'
-  dependsOn: Docker
+  dependsOn: Deploy
   condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
   jobs:
   - job: CleanupJob
