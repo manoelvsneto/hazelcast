@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hazelcast-client
+  namespace: default
+  labels:
+    app: hazelcast-client
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: hazelcast-client
+  template:
+    metadata:
+      labels:
+        app: hazelcast-client
+    spec:
+      containers:
+        - name: hazelcast-client
+          image: localhost:32000/hazelcast-client:latest
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: HAZELCAST_CLUSTER_NAME
+              value: "dev"
+            - name: HAZELCAST_SERVER_ADDRESS
+              value: "hazelcast-service.default.svc.cluster.local:5701"
+            - name: JAVA_OPTS
+              value: "-Dhazelcast.logging.type=slf4j -Dhazelcast.client.failover.try.count=10"
+            # SQL Server Configuration
+            - name: SQL_SERVER_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: azure-sql-secret
+                  key: connection-string
+                  optional: true
+            - name: SQL_SERVER_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: azure-sql-secret
+                  key: username
+                  optional: true
+            - name: SQL_SERVER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: azure-sql-secret
+                  key: password
+                  optional: true
+            # Service Bus Configuration
+            - name: SERVICE_BUS_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: azure-servicebus-secret
+                  key: connection-string
+                  optional: true
+            - name: SERVICE_BUS_QUEUE_NAME
+              value: "hazelcast-events"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            exec:
+              command:
+                - pgrep
+                - java
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - pgrep
+                - java
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3

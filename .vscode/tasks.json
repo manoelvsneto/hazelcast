@@ -1,0 +1,64 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Build Project",
+			"type": "shell",
+			"command": "mvn",
+			"args": [
+				"clean",
+				"compile"
+			],
+			"group": "build",
+			"problemMatcher": [],
+			"isBackground": false
+		},
+		{
+			"label": "Run Tests",
+			"type": "shell",
+			"command": "mvn",
+			"args": [
+				"test"
+			],
+			"group": "test",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Package Project",
+			"type": "shell",
+			"command": "mvn",
+			"args": [
+				"clean",
+				"package"
+			],
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Run Hazelcast Server",
+			"type": "shell",
+			"command": "mvn",
+			"args": [
+				"exec:java",
+				"-Dexec.mainClass=com.hazelcast.example.HazelcastServer"
+			],
+			"group": "none",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "Run Hazelcast Client",
+			"type": "shell",
+			"command": "mvn",
+			"args": [
+				"exec:java",
+				"-Dexec.mainClass=com.hazelcast.example.HazelcastClientExample"
+			],
+			"group": "none",
+			"isBackground": false,
+			"problemMatcher": []
+		}
+	]
+}

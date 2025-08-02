@@ -1,0 +1,177 @@
+# Azure DevOps Pipeline para Hazelcast no MicroK8s
+# Pipeline simplificado para build e deploy
+
+trigger:
+  branches:
+    include:
+      - main
+      - develop
+  paths:
+    include:
+      - src/*
+      - pom.xml
+      - Dockerfile
+      - k8s/*
+
+variables:
+  # Configurações básicas
+  mavenPomFile: 'pom.xml'
+  javaVersion: '11'
+  
+  # Configurações do Docker
+  dockerRegistryServiceConnection: 'your-docker-registry'
+  imageRepository: 'hazelcast-client'
+  containerRegistry: 'your-registry.azurecr.io'
+  dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'
+  tag: '$(Build.BuildId)'
+  
+  # Configurações do Kubernetes
+  kubernetesServiceConnection: 'your-microk8s-connection'
+  namespace: 'default'
+
+stages:
+- stage: Build
+  displayName: 'Build Application'
+  jobs:
+  - job: BuildJob
+    displayName: 'Build and Test'
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    steps:
+    - task: JavaToolInstaller@0
+      displayName: 'Install Java $(javaVersion)'
+      inputs:
+        versionSpec: '$(javaVersion)'
+        jdkArchitectureOption: 'x64'
+        jdkSourceOption: 'PreInstalled'
+    
+    - script: |
+        mvn clean compile
+      displayName: 'Maven Compile'
+    
+    - script: |
+        mvn test
+      displayName: 'Run Tests'
+    
+    - script: |
+        mvn package -DskipTests
+      displayName: 'Package Application'
+    
+    - task: PublishTestResults@2
+      displayName: 'Publish Test Results'
+      condition: succeededOrFailed()
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: '**/surefire-reports/TEST-*.xml'
+        mergeTestResults: true
+    
+    - task: CopyFiles@2
+      displayName: 'Copy Files'
+      inputs:
+        SourceFolder: 'target'
+        Contents: '*.jar'
+        TargetFolder: '$(Build.ArtifactStagingDirectory)'
+    
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Artifacts'
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+        ArtifactName: 'drop'
+
+- stage: Docker
+  displayName: 'Build Docker Image'
+  dependsOn: Build
+  jobs:
+  - job: DockerJob
+    displayName: 'Docker Build and Push'
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    steps:
+    - task: Docker@2
+      displayName: 'Build Docker Image for ARM64'
+      inputs:
+        command: 'build'
+        dockerfile: 'Dockerfile.arm64'
+        repository: '$(imageRepository)'
+        tags: |
+          $(tag)
+          latest
+        arguments: '--platform linux/arm64'
+    
+    - task: Docker@2
+      displayName: 'Push Docker Image'
+      inputs:
+        command: 'push'
+        repository: '$(imageRepository)'
+        containerRegistry: '$(dockerRegistryServiceConnection)'
+        tags: |
+          $(tag)
+          latest
+
+- stage: Deploy
+  displayName: 'Deploy to MicroK8s'
+  dependsOn: Docker
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - deployment: DeployJob
+    displayName: 'Deploy to Kubernetes'
+    pool:
+      vmImage: 'ubuntu-latest'
+    environment: 'microk8s-cluster'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - script: |
+              # Substituir placeholders nos manifestos
+              sed -i "s|YOUR_REGISTRY|$(containerRegistry)|g" $(Pipeline.Workspace)/s/k8s/hazelcast-client-deployment.yaml
+              sed -i "s|latest|$(tag)|g" $(Pipeline.Workspace)/s/k8s/hazelcast-client-deployment.yaml
+            displayName: 'Update Manifests'
+          
+          - task: KubernetesManifest@0
+            displayName: 'Deploy RBAC'
+            inputs:
+              action: 'deploy'
+              kubernetesServiceConnection: '$(kubernetesServiceConnection)'
+              namespace: '$(namespace)'
+              manifests: '$(Pipeline.Workspace)/s/k8s/hazelcast-rbac.yaml'
+          
+          - task: KubernetesManifest@0
+            displayName: 'Deploy ConfigMap'
+            inputs:
+              action: 'deploy'
+              kubernetesServiceConnection: '$(kubernetesServiceConnection)'
+              namespace: '$(namespace)'
+              manifests: '$(Pipeline.Workspace)/s/k8s/hazelcast-configmap.yaml'
+          
+          - task: KubernetesManifest@0
+            displayName: 'Deploy Services'
+            inputs:
+              action: 'deploy'
+              kubernetesServiceConnection: '$(kubernetesServiceConnection)'
+              namespace: '$(namespace)'
+              manifests: '$(Pipeline.Workspace)/s/k8s/hazelcast-service.yaml'
+          
+          - task: KubernetesManifest@0
+            displayName: 'Deploy Hazelcast Server'
+            inputs:
+              action: 'deploy'
+              kubernetesServiceConnection: '$(kubernetesServiceConnection)'
+              namespace: '$(namespace)'
+              manifests: '$(Pipeline.Workspace)/s/k8s/hazelcast-deployment.yaml'
+          
+          - task: KubernetesManifest@0
+            displayName: 'Deploy Hazelcast Client'
+            inputs:
+              action: 'deploy'
+              kubernetesServiceConnection: '$(kubernetesServiceConnection)'
+              namespace: '$(namespace)'
+              manifests: '$(Pipeline.Workspace)/s/k8s/hazelcast-client-deployment.yaml'
+          
+          - script: |
+              kubectl get pods -n $(namespace) -l app=hazelcast
+              kubectl get pods -n $(namespace) -l app=hazelcast-client
+              kubectl get services -n $(namespace)
+            displayName: 'Verify Deployment'

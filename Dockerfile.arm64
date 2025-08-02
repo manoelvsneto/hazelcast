@@ -1,0 +1,61 @@
+# Dockerfile específico para ARM64
+FROM --platform=linux/arm64 maven:3.9.6-eclipse-temurin-11 AS build
+
+WORKDIR /app
+
+# Copy pom.xml and download dependencies
+COPY pom.xml .
+RUN mvn dependency:go-offline -B
+
+# Copy source code and build
+COPY src ./src
+RUN mvn clean package -DskipTests
+
+# Runtime stage - ARM64 optimizado
+FROM --platform=linux/arm64 eclipse-temurin:11-jre
+
+WORKDIR /app
+
+# Install required packages and create user
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    curl \
+    procps && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd -r hazelcast && \
+    useradd -r -g hazelcast hazelcast
+
+# Create logs directory
+RUN mkdir -p /app/logs && \
+    chown -R hazelcast:hazelcast /app
+
+# Copy the built JAR
+COPY --from=build /app/target/hazelcast-project-1.0.0.jar /app/hazelcast-project.jar
+
+# Copy resources
+COPY --from=build /app/target/classes/logback.xml /app/
+
+# Change ownership
+RUN chown -R hazelcast:hazelcast /app
+
+# Switch to non-root user
+USER hazelcast
+
+# Expose port for potential web interface
+EXPOSE 8080
+
+# Set JVM options optimized for ARM64 and containers
+ENV JAVA_OPTS="-XX:+UseContainerSupport \
+               -XX:MaxRAMPercentage=75.0 \
+               -XX:+UseG1GC \
+               -XX:G1HeapRegionSize=16m \
+               -XX:+UseStringDeduplication \
+               -Djava.security.egd=file:/dev/./urandom \
+               -Dhazelcast.logging.type=slf4j"
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD pgrep -f "java.*hazelcast" || exit 1
+
+# Run the application
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -cp /app/hazelcast-project.jar com.hazelcast.example.HazelcastAzureIntegratedClient"]
