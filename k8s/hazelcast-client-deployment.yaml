@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: hazelcast-client
-  namespace: default
+  namespace: hazelcast
   labels:
     app: hazelcast-client
 spec:
