@@ -299,7 +299,7 @@ stages:
               {
                   var username = Environment.GetEnvironmentVariable("DOCKERHUB_USERNAME");
                   var password = Environment.GetEnvironmentVariable("DOCKERHUB_PASSWORD");
-                  var repository = Environment.GetEnvironmentVariable("DOCKERHUB_REPOSITORY");
+                  var repository = Environment.GetEnvironmentVariable("DOCKERHUB_REPOSITORY1");
 
                   Console.WriteLine($"🐳 Iniciando limpeza do Docker Hub para {username}/{repository}");
 
