@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hazelcast-mancenter
+  namespace: hazelcast
+labels:
+  app: hazelcast-mancenter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hazelcast-mancenter
+  template:
+    metadata:
+      labels:
+        app: hazelcast-mancenter
+    spec:
+      nodeSelector:
+        kubernetes.io/arch: arm64   # seu cluster é arm64
+      containers:
+      - name: management-center
+        image: hazelcast/management-center:5.5
+        ports:
+        - containerPort: 8080
+        readinessProbe:
+          httpGet: { path: /, port: 8080 }
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet: { path: /, port: 8080 }
+          initialDelaySeconds: 15
+          periodSeconds: 20
