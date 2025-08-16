@@ -4,21 +4,23 @@ metadata:
   name: hazelcast-mc-ingress
   namespace: hazelcast
   annotations:
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"          # deixe false até o cert ficar Ready
-    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"        # deixe false até o cert ficar Ready
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"  # idem
 spec:
   ingressClassName: nginx
   tls:
-  - hosts: [mc.archse.eng.br]
+  - hosts:
+    - hazelcast.archse.eng.br
     secretName: hazelcast-mc-tls
   rules:
-  - host: mc.archse.eng.br
+  - host: hazelcast.archse.eng.br
     http:
       paths:
       - path: /
         pathType: Prefix
         backend:
           service:
-            name: hazelcast-mc          # Service da sua UI do MC
+            name: hazelcast-mancenter     # << este é o seu Service
             port:
-              number: 8080              # porta do Service do MC
+              number: 8080
