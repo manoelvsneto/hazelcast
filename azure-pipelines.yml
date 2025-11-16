@@ -244,6 +244,24 @@ stages:
               command: 'apply'
               arguments: '-f $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml --insecure-skip-tls-verify'
           
+          - task: Kubernetes@1
+            displayName: 'Deploy Hazelcast Client Secure'
+            inputs:
+              connectionType: 'Kubernetes Service Connection'
+              kubernetesServiceEndpoint: '$(kubernetesServiceConnection)'
+              namespace: '$(namespace)'
+              command: 'apply'
+              arguments: '-f $(System.ArtifactsDirectory)/drop/k8s/hazelcast-certificate.yaml --insecure-skip-tls-verify'
+
+          - task: Kubernetes@1
+            displayName: 'Deploy Hazelcast Client Ingress'
+            inputs:
+              connectionType: 'Kubernetes Service Connection'
+              kubernetesServiceEndpoint: '$(kubernetesServiceConnection)'
+              namespace: '$(namespace)'
+              command: 'apply'
+              arguments: '-f $(System.ArtifactsDirectory)/drop/k8s/hazelcast-ingress.yaml --insecure-skip-tls-verify'
+
           - script: |
               echo "Aguardando deployment..."
               microk8s kubectl wait --for=condition=available --timeout=300s deployment/hazelcast-client -n $(namespace) --insecure-skip-tls-verify
