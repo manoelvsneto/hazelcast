@@ -9,31 +9,26 @@ trigger:
     include:
       - main
 
-stages:
-- stage: Build
-  displayName: 'Deploy to MicroK8s'
-  dependsOn: Docker
-  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
-  jobs:
-  - deployment: DeployJob
-    displayName: 'Deploy to Kubernetes'
-    pool:
-      name: Arm64
-      vmImage: 'ubuntu-22.04'
-    environment: 'microk8s-cluster'
-    strategy:
-      runOnce:
-        deploy:
-          steps:
-          - task: KubernetesManifest@0
-            displayName: Deploy to Kubernetes cluster
-            inputs:
-              kubernetesServiceConnection: K8SOracleCloud
-              namespace:  'hazelcast' 
-              action: deploy
-              enableKubectlCommand: true
-              arguments: --insecure-skip-tls-verify
-              manifests: |
-                $(Build.SourcesDirectory)/k8s/hazelcast-member.yaml
-                $(Build.SourcesDirectory)/k8s/hazelcast-secrets.yaml
-              containers: 'hazelcast/hazelcast:latest'
+jobs:
+- deployment: DeployJob
+  displayName: 'Deploy to Kubernetes'
+  pool:
+    name: Arm64
+    vmImage: 'ubuntu-22.04'
+  environment: 'microk8s-cluster'
+  strategy:
+    runOnce:
+      deploy:
+        steps:
+        - task: KubernetesManifest@0
+          displayName: Deploy to Kubernetes cluster
+          inputs:
+            kubernetesServiceConnection: K8SOracleCloud
+            namespace:  'hazelcast' 
+            action: deploy
+            enableKubectlCommand: true
+            arguments: --insecure-skip-tls-verify
+            manifests: |
+              $(Build.SourcesDirectory)/k8s/hazelcast-member.yaml
+              $(Build.SourcesDirectory)/k8s/hazelcast-secrets.yaml
+            containers: 'hazelcast/hazelcast:latest'
