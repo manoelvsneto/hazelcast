@@ -1,0 +1,429 @@
+# Azure DevOps Pipeline para Hazelcast Client no MicroK8s
+# Pipeline para build e deploy apenas do cliente Hazelcast
+pool:
+  name: Arm64
+  vmImage: 'ubuntu-22.04'
+
+trigger:
+  branches:
+    include:
+      - main
+      - develop
+  paths:
+    include:
+      - src/*
+      - pom.xml
+      - Dockerfile*
+      - k8s/*
+
+variables:
+  # Configurações básicas
+  mavenPomFile: 'pom.xml'
+  javaVersion: '17'
+  
+  # Configurações do Docker - CONFIGURE ESTAS VARIÁVEIS
+  dockerRegistryServiceConnection: 'DockerConnection'  # Nome da service connection no Azure DevOps
+  imageRepository: 'manoelvsneto/hazelcast-client'
+  containerRegistry: 'DockerConnection'           # Substitua pelo seu ACR
+  dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile.arm64'
+  tag: '$(Build.BuildId)'
+  
+  # Configurações do Kubernetes - CONFIGURE ESTAS VARIÁVEIS  
+  kubernetesServiceConnection: 'K8SOracleCloud'   # Nome da service connection no Azure DevOps
+  namespace: 'hazelcast'
+  
+  # Configurações do Docker Hub Cleanup
+  DOCKERHUB_USERNAME: 'manoelvsneto'
+  DOCKERHUB_REPOSITORY: 'hazelcast-client'
+
+stages:
+- stage: Build
+  displayName: 'Build Application'
+  jobs:
+  - job: BuildJob
+    displayName: 'Build and Test'
+    pool:
+      name: Arm64
+      vmImage: 'ubuntu-22.04'
+    
+    steps:
+    - script: |
+        # Verificar se Java 17 está disponível
+        if command -v java &> /dev/null; then
+          echo "Java encontrado: $(java -version 2>&1 | head -1)"
+          export JAVA_HOME=$(readlink -f /usr/bin/java | sed "s:bin/java::")
+        else
+          echo "Instalando OpenJDK 17..."
+          sudo apt-get update
+          sudo apt-get install -y openjdk-17-jdk
+          export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-arm64
+        fi
+        
+        # Verificar se Maven está disponível
+        if ! command -v mvn &> /dev/null; then
+          echo "Instalando Maven..."
+          sudo apt-get install -y maven
+        fi
+        
+        echo "##vso[task.setvariable variable=JAVA_HOME]$JAVA_HOME"
+        echo "JAVA_HOME set to: $JAVA_HOME"
+        java -version
+        mvn -version
+      displayName: 'Setup Java 17 and Maven'
+    
+    - script: |
+        mvn clean compile
+      displayName: 'Maven Compile'
+      env:
+        JAVA_HOME: $(JAVA_HOME)
+    
+    - script: |
+        mvn test
+      displayName: 'Run Tests'
+      env:
+        JAVA_HOME: $(JAVA_HOME)
+    
+    - script: |
+        mvn package -DskipTests
+      displayName: 'Package Application'
+      env:
+        JAVA_HOME: $(JAVA_HOME)
+    
+    - task: PublishTestResults@2
+      displayName: 'Publish Test Results'
+      condition: succeededOrFailed()
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: '**/surefire-reports/TEST-*.xml'
+        mergeTestResults: true
+    
+    - task: CopyFiles@2
+      displayName: 'Copy Artifacts'
+      inputs:
+        SourceFolder: '$(Build.SourcesDirectory)'
+        Contents: |
+          target/*.jar
+          k8s/**
+          Dockerfile*
+        TargetFolder: '$(Build.ArtifactStagingDirectory)'
+    
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Artifacts'
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+        ArtifactName: 'drop'
+
+- stage: Docker
+  displayName: 'Build Docker Image'
+  dependsOn: Build
+  jobs:
+  - job: DockerJob
+    displayName: 'Docker Build and Push'
+    pool:
+      name: Arm64
+      vmImage: 'ubuntu-22.04'
+    
+    steps:
+    - task: DownloadBuildArtifacts@0
+      displayName: 'Download Artifacts'
+      inputs:
+        artifactName: 'drop'
+        downloadPath: '$(System.ArtifactsDirectory)'
+    
+    - script: |
+        # Criar Dockerfile otimizado para usar JAR pré-compilado
+        cat > Dockerfile.runtime <<EOF
+        # Runtime Dockerfile para JAR pré-compilado
+        FROM --platform=linux/arm64 eclipse-temurin:17-jre
+        
+        WORKDIR /app
+        
+        # Install required packages and create user
+        RUN apt-get update && \\
+            apt-get install -y --no-install-recommends \\
+            curl \\
+            procps && \\
+            rm -rf /var/lib/apt/lists/* && \\
+            groupadd -r hazelcast && \\
+            useradd -r -g hazelcast hazelcast
+        
+        # Create logs directory
+        RUN mkdir -p /app/logs && \\
+            chown -R hazelcast:hazelcast /app
+        
+        # Copy JAR from build artifacts (procura por JAR shaded)
+        COPY target/hazelcast-project-*.jar app.jar
+        
+        # Set user
+        USER hazelcast
+        
+        # Environment variables
+        ENV JAVA_OPTS="-Xmx512m -Xms256m -Dhazelcast.logging.type=slf4j"
+        
+        # Health check (comentado até implementar endpoint)
+        # HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \\
+        #     CMD curl -f http://localhost:8080/health || exit 1
+        
+        # Expose port
+        EXPOSE 8080
+        
+        # Run application com JAVA_OPTS
+        ENTRYPOINT ["sh", "-c", "java \$JAVA_OPTS -jar app.jar"]
+        EOF
+        
+        echo "Dockerfile.runtime criado:"
+        cat Dockerfile.runtime
+        
+        echo "Listando JARs disponíveis:"
+        ls -la $(System.ArtifactsDirectory)/drop/target/
+      displayName: 'Create Runtime Dockerfile'
+    
+    - task: Docker@2
+      displayName: 'Build and Push Docker Image'
+      inputs:
+        containerRegistry: '$(dockerRegistryServiceConnection)'
+        repository: '$(imageRepository)'
+        command: 'buildAndPush'
+        Dockerfile: 'Dockerfile.runtime'
+        buildContext: '$(System.ArtifactsDirectory)/drop'
+        tags: |
+          $(tag)
+          latest
+        arguments: '--platform linux/arm64'
+
+- stage: Deploy
+  displayName: 'Deploy to MicroK8s'
+  dependsOn: Docker
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - deployment: DeployJob
+    displayName: 'Deploy to Kubernetes'
+    pool:
+      name: Arm64
+      vmImage: 'ubuntu-22.04'
+    environment: 'microk8s-cluster'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: DownloadBuildArtifacts@0
+            displayName: 'Download Artifacts'
+            inputs:
+              artifactName: 'drop'
+              downloadPath: '$(System.ArtifactsDirectory)'
+          
+          - script: |
+              # Substituir imagem Docker no deployment
+              sed -i "s|localhost:32000/hazelcast-client:latest|$(imageRepository):$(tag)|g" $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml
+              
+              echo "========================="
+              echo "Deployment atualizado com nova imagem:"
+              echo "========================="
+              cat $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml
+            displayName: 'Update Deployment with New Image'
+          
+          - script: |
+              # Debug: Verificar conectividade com cluster
+              echo "Verificando conectividade com cluster Kubernetes..."
+              microk8s kubectl cluster-info --insecure-skip-tls-verify || echo "Falha na conexão inicial"
+              microk8s kubectl get nodes --insecure-skip-tls-verify || echo "Falha ao listar nodes"
+              microk8s kubectl get namespaces --insecure-skip-tls-verify || echo "Falha ao listar namespaces"
+              
+              # Verificar se namespace existe, criar se necessário
+              microk8s kubectl get namespace $(namespace) --insecure-skip-tls-verify || \
+              microk8s kubectl create namespace $(namespace) --insecure-skip-tls-verify
+            displayName: 'Debug Kubernetes Connection'
+          
+          
+          - task: Kubernetes@1
+            displayName: 'Deploy Hazelcast Client'
+            inputs:
+              connectionType: 'Kubernetes Service Connection'
+              kubernetesServiceEndpoint: '$(kubernetesServiceConnection)'
+              namespace: '$(namespace)'
+              command: 'apply'
+              arguments: '-f $(System.ArtifactsDirectory)/drop/k8s/hazelcast-client-deployment.yaml --insecure-skip-tls-verify'
+          
+          - task: Kubernetes@1
+            displayName: 'Deploy Hazelcast Client Secure'
+            inputs:
+              connectionType: 'Kubernetes Service Connection'
+              kubernetesServiceEndpoint: '$(kubernetesServiceConnection)'
+              namespace: '$(namespace)'
+              command: 'apply'
+              arguments: '-f $(System.ArtifactsDirectory)/drop/k8s/hazelcast-certificate.yaml --insecure-skip-tls-verify'
+
+          - task: Kubernetes@1
+            displayName: 'Deploy Hazelcast Client Ingress'
+            inputs:
+              connectionType: 'Kubernetes Service Connection'
+              kubernetesServiceEndpoint: '$(kubernetesServiceConnection)'
+              namespace: '$(namespace)'
+              command: 'apply'
+              arguments: '-f $(System.ArtifactsDirectory)/drop/k8s/hazelcast-ingress.yaml --insecure-skip-tls-verify'
+
+          - script: |
+              echo "Aguardando deployment..."
+              microk8s kubectl wait --for=condition=available --timeout=300s deployment/hazelcast-client -n $(namespace) --insecure-skip-tls-verify
+              echo "Verificando status do deployment:"
+              microk8s kubectl get pods -n $(namespace) -l app=hazelcast-client --insecure-skip-tls-verify
+              microk8s kubectl get deployment hazelcast-client -n $(namespace) --insecure-skip-tls-verify
+              echo "Verificando logs dos pods (últimas 20 linhas):"
+              microk8s kubectl logs -n $(namespace) -l app=hazelcast-client --tail=20 --insecure-skip-tls-verify || echo "Nenhum log disponível ainda"
+            displayName: 'Verify Deployment'
+
+- stage: DockerHubCleanup
+  displayName: '🧹 Docker Hub Cleanup'
+  dependsOn: Deploy
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - job: CleanupJob
+    displayName: '🧹 Deletar tags antigas do Docker Hub'
+    pool:
+      name: Arm64
+      vmImage: 'ubuntu-22.04'
+    
+    steps:
+    - task: UseDotNet@2
+      displayName: 'Instalar .NET SDK'
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+        installationPath: $(Agent.ToolsDirectory)/dotnet
+
+    - script: |
+        mkdir -p cleanup
+        cd cleanup
+        dotnet new console -o DockerCleanup
+      displayName: 'Criar projeto C#'
+
+    - task: Bash@3
+      displayName: 'Inserir código C# para exclusão'
+      inputs:
+        targetType: inline
+        script: |
+          cat <<EOF > cleanup/DockerCleanup/Program.cs
+          using System;
+          using System.Net.Http;
+          using System.Net.Http.Headers;
+          using System.Text.Json;
+          using System.Text;
+          using System.Threading.Tasks;
+          using System.Collections.Generic;
+
+          class Program
+          {
+              static async Task Main()
+              {
+                  var username = Environment.GetEnvironmentVariable("DOCKERHUB_USERNAME");
+                  var password = Environment.GetEnvironmentVariable("DOCKERHUB_PASSWORD");
+                  var repository = Environment.GetEnvironmentVariable("DOCKERHUB_REPOSITORY");
+
+                  Console.WriteLine($"🐳 Iniciando limpeza do Docker Hub para {username}/{repository}");
+
+                  var client = new HttpClient();
+
+                  var loginData = new { username = username, password = password };
+                  var loginResponse = await client.PostAsync(
+                      "https://hub.docker.com/v2/users/login/",
+                      new StringContent(JsonSerializer.Serialize(loginData), Encoding.UTF8, "application/json")
+                  );
+
+                  if (!loginResponse.IsSuccessStatusCode)
+                  {
+                      Console.WriteLine($"❌ Erro ao autenticar: {loginResponse.StatusCode}");
+                      return;
+                  }
+
+                  var loginContent = await loginResponse.Content.ReadAsStringAsync();
+                  var token = JsonSerializer.Deserialize<JsonElement>(loginContent).GetProperty("token").GetString();
+                  client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("JWT", token);
+
+                  Console.WriteLine("✅ Autenticado com sucesso no Docker Hub!\n");
+
+                  var tags = new List<string>();
+                  var page = 1;
+                  var pageSize = 100;
+                  bool hasMore = true;
+
+                  while (hasMore)
+                  {
+                      var url = $"https://hub.docker.com/v2/repositories/{username}/{repository}/tags/?page={page}&page_size={pageSize}";
+                      var tagsResponse = await client.GetAsync(url);
+
+                      if (!tagsResponse.IsSuccessStatusCode)
+                      {
+                          Console.WriteLine($"❌ Erro ao obter tags: {tagsResponse.StatusCode}");
+                          return;
+                      }
+
+                      var tagsJson = await tagsResponse.Content.ReadAsStringAsync();
+                      var root = JsonSerializer.Deserialize<JsonElement>(tagsJson);
+                      var results = root.GetProperty("results");
+
+                      foreach (var tag in results.EnumerateArray())
+                      {
+                          var tagName = tag.GetProperty("name").GetString();
+                          if (tagName != "latest")
+                          {
+                              tags.Add(tagName);
+                          }
+                      }
+
+                      hasMore = root.GetProperty("next").ValueKind != JsonValueKind.Null;
+                      page++;
+                  }
+
+                  Console.WriteLine($"📋 Tags encontradas para exclusão em '{username}/{repository}':");
+                  foreach (var tag in tags)
+                  {
+                      Console.WriteLine($" - {tag}");
+                  }
+                  Console.WriteLine($"📊 Total de tags para exclusão: {tags.Count}\n");
+
+                  int deletedCount = 0;
+                  int errorCount = 0;
+
+                  foreach (var tagToDelete in tags)
+                  {
+                      var deleteUrl = $"https://hub.docker.com/v2/repositories/{username}/{repository}/tags/{tagToDelete}/";
+                      var deleteRequest = new HttpRequestMessage(HttpMethod.Delete, deleteUrl);
+                      deleteRequest.Headers.Authorization = new AuthenticationHeaderValue("JWT", token);
+
+                      var deleteResponse = await client.SendAsync(deleteRequest);
+
+                      if (deleteResponse.IsSuccessStatusCode)
+                      {
+                          Console.WriteLine($"✅ Tag '{tagToDelete}' excluída com sucesso.");
+                          deletedCount++;
+                      }
+                      else
+                      {
+                          Console.WriteLine($"❌ Erro ao excluir tag '{tagToDelete}': {deleteResponse.StatusCode}");
+                          var content = await deleteResponse.Content.ReadAsStringAsync();
+                          Console.WriteLine($"Detalhes: {content}");
+                          errorCount++;
+                      }
+                  }
+
+                  Console.WriteLine($"\n📈 Resumo da limpeza:");
+                  Console.WriteLine($"✅ Tags excluídas: {deletedCount}");
+                  Console.WriteLine($"❌ Erros: {errorCount}");
+                  Console.WriteLine($"🏷️ Tag 'latest' mantida");
+              }
+          }
+          EOF
+
+    - script: |
+        cd cleanup/DockerCleanup
+        dotnet build
+      displayName: 'Build do projeto C#'
+
+    - script: |
+        cd cleanup/DockerCleanup
+        dotnet run
+      displayName: 'Executar limpeza do Docker Hub'
+      env:
+        DOCKERHUB_USERNAME: $(DOCKERHUB_USERNAME)
+        DOCKERHUB_PASSWORD: $(DOCKERHUB_PASSWORD)  # 💡 Variável secreta definida no pipeline
+        DOCKERHUB_REPOSITORY: $(DOCKERHUB_REPOSITORY)
