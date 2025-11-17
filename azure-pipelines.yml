@@ -8,32 +8,6 @@ trigger:
   branches:
     include:
       - main
-      - develop
-  paths:
-    include:
-      - src/*
-      - pom.xml
-      - Dockerfile*
-      - k8s/*
-
-variables:
-
-  
-  # Configurações do Docker - CONFIGURE ESTAS VARIÁVEIS
-  dockerRegistryServiceConnection: 'DockerConnection'  # Nome da service connection no Azure DevOps
-  imageRepository: 'hazelcast/hazelcast'
-  containerRegistry: 'DockerConnection'           # Substitua pelo seu ACR
-  dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile.arm64'
-  tag: '$(Build.BuildId)'
-  
-  # Configurações do Kubernetes - CONFIGURE ESTAS VARIÁVEIS  
-  kubernetesServiceConnection: 'K8SOracleCloud'   # Nome da service connection no Azure DevOps
-  namespace: 'hazelcast'
-  
-  # Configurações do Docker Hub Cleanup
-  DOCKERHUB_USERNAME: 'hazelcast'
-  DOCKERHUB_REPOSITORY: 'hazelcast'
-
 stages:
 
 - stage: Deploy
@@ -51,12 +25,11 @@ stages:
       runOnce:
         deploy:
           steps:
-
           - task: KubernetesManifest@0
             displayName: Deploy to Kubernetes cluster
             inputs:
               kubernetesServiceConnection: K8SOracleCloud
-              namespace:  '$(namespace)' 
+              namespace:  'hazelcast' 
               action: deploy
               enableKubectlCommand: true
               arguments: --insecure-skip-tls-verify
@@ -66,4 +39,4 @@ stages:
                 $(Build.SourcesDirectory)/k8s/hazelcast-ingress.yaml
                 $(Build.SourcesDirectory)/k8s/hazelcast-member.yaml
                 $(Build.SourcesDirectory)/k8s/hazelcast-secrets.yaml
-              containers: 'manoelvsneto/hazelcast-client:latest'
+              containers: 'hazelcast/hazelcast:latest'
