@@ -134,20 +134,33 @@ spec:
         - containerPort: 8080
           name: http
         env:
-        - name: MC_INIT_CMD
-          value: "./bin/hz-mc conf cluster add -H=/data -ma hazelcast-service.hazelcast.svc.cluster.local:5701 -cn dev"
+        - name: MC_DEFAULT_CLUSTER
+          value: dev
+        - name: MC_DEFAULT_CLUSTER_MEMBERS
+          value: hazelcast-service.hazelcast.svc.cluster.local:5701
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
         readinessProbe:
           httpGet:
             path: /health
             port: 8080
-          initialDelaySeconds: 30
+          initialDelaySeconds: 45
           periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
         livenessProbe:
           httpGet:
             path: /health
             port: 8080
-          initialDelaySeconds: 45
+          initialDelaySeconds: 60
           periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 3
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
