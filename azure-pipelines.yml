@@ -34,9 +34,6 @@ stages:
               enableKubectlCommand: true
               arguments: --insecure-skip-tls-verify
               manifests: |
-                $(Build.SourcesDirectory)/k8s/hazelcast-services.yaml
-                $(Build.SourcesDirectory)/k8s/hazelcast-certificate.yaml
-                $(Build.SourcesDirectory)/k8s/hazelcast-ingress.yaml
                 $(Build.SourcesDirectory)/k8s/hazelcast-member.yaml
                 $(Build.SourcesDirectory)/k8s/hazelcast-secrets.yaml
               containers: 'hazelcast/hazelcast:latest'
