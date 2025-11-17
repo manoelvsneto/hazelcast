@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: hazelcast-member
+  name: hazelcast
   namespace: hazelcast
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -21,7 +21,7 @@ metadata:
   namespace: hazelcast
 subjects:
 - kind: ServiceAccount
-  name: hazelcast-member
+  name: hazelcast
   namespace: hazelcast
 roleRef:
   kind: Role
@@ -41,36 +41,19 @@ spec:
     app: hazelcast
   ports:
     - name: hazelcast
-      port: 5701
+      port: 80
       targetPort: 5701
-      protocol: TCP
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: hazelcast-mc-service
-  namespace: hazelcast
-  labels:
-    app: hazelcast-mc
-spec:
-  type: ClusterIP
-  selector:
-    app: hazelcast-mc
-  ports:
-    - name: http
-      port: 8080
-      targetPort: 8080
       protocol: TCP
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: hazelcast-member
+  name: hazelcast
   namespace: hazelcast
   labels:
     app: hazelcast
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: hazelcast
@@ -79,78 +62,19 @@ spec:
       labels:
         app: hazelcast
     spec:
-      serviceAccountName: hazelcast-member
       nodeSelector:
         kubernetes.io/arch: arm64
       containers:
       - name: hazelcast
-        image: hazelcast/hazelcast:5.5
+        image: hazelcast/hazelcast:latest
         ports:
-        - containerPort: 5701
-          name: hazelcast
-        env:
-        - name: HZ_CLUSTERNAME
-          value: dev
-        - name: HZ_NETWORK_JOIN_KUBERNETES_ENABLED
-          value: "true"
-        - name: HZ_NETWORK_JOIN_KUBERNETES_NAMESPACE
-          value: hazelcast
-        - name: HZ_NETWORK_JOIN_KUBERNETES_SERVICENAME
-          value: hazelcast-service
-        readinessProbe:
-          tcpSocket: { port: 5701 }
-          initialDelaySeconds: 5
-          periodSeconds: 10
-        livenessProbe:
-          tcpSocket: { port: 5701 }
-          initialDelaySeconds: 15
-          periodSeconds: 20
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: hazelcast-mc
-  namespace: hazelcast
-  labels:
-    app: hazelcast-mc
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: hazelcast-mc
-  template:
-    metadata:
-      labels:
-        app: hazelcast-mc
-    spec:
-      nodeSelector:
-        kubernetes.io/arch: arm64
-      containers:
-      - name: management-center
-        image: hazelcast/management-center:latest
-        ports:
-        - containerPort: 8080
+        - containerPort: 5071
           name: http
-        env:
-        - name: MC_INIT_CMD
-          value: "./bin/hz-mc conf cluster add -H=/data -ma hazelcast-service.hazelcast.svc.cluster.local:5701 -cn dev"
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 45
-          periodSeconds: 20
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: hazelcast-mc-ingress
+  name: hazelcast-ingress
   namespace: hazelcast
   annotations:
     kubernetes.io/ingress.class: "nginx"
@@ -177,8 +101,8 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: hazelcast-tls
-  namespace: hazelcast
+  name: framework-tls
+  namespace: default
 spec:
   secretName: hazelcast-tls
   issuerRef:
