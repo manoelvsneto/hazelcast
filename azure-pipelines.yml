@@ -216,10 +216,10 @@ stages:
               enableKubectlCommand: true
               arguments: --insecure-skip-tls-verify
               manifests: |
-                $(Build.SourcesDirectory)/k8s/00-namespace.yml
-                $(Build.SourcesDirectory)/k8s/01-configmap.yml
-                $(Build.SourcesDirectory)/k8s/02-deployment.yml
-                $(Build.SourcesDirectory)/k8s/03-service.yml
-                $(Build.SourcesDirectory)/k8s/04-ingress.yml
-                $(Build.SourcesDirectory)/k8s/05-secrets.yml
+                $(Build.SourcesDirectory)/k8s/hazelcast-client-deployment.yaml
+                $(Build.SourcesDirectory)/k8s/hazelcast-mancenter-service.yaml
+                $(Build.SourcesDirectory)/k8s/hazelcast-certificate.yaml
+                $(Build.SourcesDirectory)/k8s/hazelcast-ingress.yaml
+                $(Build.SourcesDirectory)/k8s/hazelcast-member.yaml
+                $(Build.SourcesDirectory)/k8s/hazelcast-secrets.yaml
               containers: 'manoelvsneto/hazelcast-client:latest'
