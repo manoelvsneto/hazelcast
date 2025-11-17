@@ -21,6 +21,6 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: hazelcast-mancenter     # << este é o seu Service
+            name: hazelcast-member     # << este é o seu Service
             port:
               number: 8080

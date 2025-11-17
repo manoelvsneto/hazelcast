@@ -64,7 +64,7 @@ spec:
         kubernetes.io/arch: arm64
       containers:
       - name: hazelcast
-        image: hazelcast/hazelcast:5.5
+        image: hazelcast/hazelcast:latest
         ports:
         - containerPort: 5701
           name: hazelcast
