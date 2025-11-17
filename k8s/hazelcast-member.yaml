@@ -41,7 +41,7 @@ spec:
     app: hazelcast
   ports:
     - name: hazelcast
-      port: 80
+      port: 5701
       targetPort: 5701
       protocol: TCP
 ---
@@ -62,14 +62,34 @@ spec:
       labels:
         app: hazelcast
     spec:
+      serviceAccountName: hazelcast
       nodeSelector:
         kubernetes.io/arch: arm64
       containers:
       - name: hazelcast
-        image: hazelcast/hazelcast:latest
+        image: hazelcast/hazelcast:5.5
         ports:
-        - containerPort: 5071
-          name: http
+        - containerPort: 5701
+          name: hazelcast
+        env:
+        - name: HZ_CLUSTERNAME
+          value: dev
+        - name: HZ_NETWORK_JOIN_KUBERNETES_ENABLED
+          value: "true"
+        - name: HZ_NETWORK_JOIN_KUBERNETES_NAMESPACE
+          value: hazelcast
+        - name: HZ_NETWORK_JOIN_KUBERNETES_SERVICENAME
+          value: hazelcast-service
+        readinessProbe:
+          tcpSocket:
+            port: 5701
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          tcpSocket:
+            port: 5701
+          initialDelaySeconds: 15
+          periodSeconds: 20
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -101,8 +121,8 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: framework-tls
-  namespace: default
+  name: hazelcast-tls
+  namespace: hazelcast
 spec:
   secretName: hazelcast-tls
   issuerRef:
