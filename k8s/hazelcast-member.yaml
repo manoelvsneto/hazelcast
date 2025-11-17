@@ -114,9 +114,9 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: hazelcast-mc-service
+            name: hazelcast-service
             port:
-              number: 8080
+              number: 80
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
