@@ -1,42 +1,27 @@
-# Azure DevOps Pipeline para Hazelcast Client no MicroK8s
-# Pipeline para build e deploy apenas do cliente Hazelcast
-pool:
-  name: Arm64
-  vmImage: 'ubuntu-22.04'
-
+# Azure DevOps Pipeline para Hazelcast no Kubernetes
 trigger:
   branches:
     include:
       - main
 
+pool:
+  name: Arm64
+
 jobs:
-- deployment: DeployJob
-  displayName: 'Deploy to Kubernetes'
-  pool:
-    name: Arm64
-    vmImage: 'ubuntu-22.04'
+- deployment: DeployHazelcast
+  displayName: 'Deploy Hazelcast to Kubernetes'
   environment: 'microk8s-cluster'
   strategy:
     runOnce:
       deploy:
         steps:
+        - checkout: self
+        
         - task: KubernetesManifest@0
-          displayName: Deploy to Kubernetes cluster
+          displayName: 'Deploy Hazelcast to Kubernetes'
           inputs:
-            kubernetesServiceConnection: K8SOracleCloud
-            namespace:  'hazelcast' 
             action: deploy
-            enableKubectlCommand: true
-            arguments: --insecure-skip-tls-verify
+            kubernetesServiceConnection: K8SOracleCloud
+            namespace: hazelcast
             manifests: |
-              $(Build.SourcesDirectory)/k8s/01-namespace.yaml
-              $(Build.SourcesDirectory)/k8s/02-serviceaccount.yaml
-              $(Build.SourcesDirectory)/k8s/03-rbac.yaml
-              $(Build.SourcesDirectory)/k8s/04-hazelcast-service.yaml
-              $(Build.SourcesDirectory)/k8s/05-hazelcast-deployment.yaml
-              $(Build.SourcesDirectory)/k8s/06-mc-service.yaml
-              $(Build.SourcesDirectory)/k8s/07-mc-deployment.yaml
-              $(Build.SourcesDirectory)/k8s/08-ingress.yaml
-              $(Build.SourcesDirectory)/k8s/09-certificate.yaml
-              $(Build.SourcesDirectory)/k8s/hazelcast-secrets.yaml
-            containers: 'hazelcast/hazelcast:5.5'
+              $(Build.SourcesDirectory)/k8s/00-all-resources.yaml

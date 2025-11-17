@@ -1,24 +1,44 @@
+# Hazelcast Kubernetes Resources - Arquivo consolidado
+# Deploy order: Namespace -> RBAC -> Services -> Deployments -> Ingress -> Certificate
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hazelcast
+  labels:
+    name: hazelcast
+
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: hazelcast
   namespace: hazelcast
+  labels:
+    app: hazelcast
+
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: hazelcast-discovery
   namespace: hazelcast
+  labels:
+    app: hazelcast
 rules:
 - apiGroups: [""]
   resources: ["endpoints", "pods", "services"]
   verbs: ["get", "list", "watch"]
+
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: hazelcast-discovery-binding
   namespace: hazelcast
+  labels:
+    app: hazelcast
 subjects:
 - kind: ServiceAccount
   name: hazelcast
@@ -27,6 +47,7 @@ roleRef:
   kind: Role
   name: hazelcast-discovery
   apiGroup: rbac.authorization.k8s.io
+
 ---
 apiVersion: v1
 kind: Service
@@ -35,15 +56,20 @@ metadata:
   namespace: hazelcast
   labels:
     app: hazelcast
+    component: cluster
 spec:
   type: ClusterIP
+  clusterIP: None
+  publishNotReadyAddresses: true
   selector:
     app: hazelcast
+    component: member
   ports:
     - name: hazelcast
       port: 5701
       targetPort: 5701
       protocol: TCP
+
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -52,15 +78,18 @@ metadata:
   namespace: hazelcast
   labels:
     app: hazelcast
+    component: member
 spec:
   replicas: 2
   selector:
     matchLabels:
       app: hazelcast
+      component: member
   template:
     metadata:
       labels:
         app: hazelcast
+        component: member
     spec:
       serviceAccountName: hazelcast
       nodeSelector:
@@ -68,9 +97,11 @@ spec:
       containers:
       - name: hazelcast
         image: hazelcast/hazelcast:5.5
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 5701
           name: hazelcast
+          protocol: TCP
         env:
         - name: HZ_CLUSTERNAME
           value: dev
@@ -80,16 +111,28 @@ spec:
           value: hazelcast
         - name: HZ_NETWORK_JOIN_KUBERNETES_SERVICENAME
           value: hazelcast-service
+        - name: JAVA_OPTS
+          value: "-Xms512m -Xmx512m"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
         readinessProbe:
           tcpSocket:
             port: 5701
           initialDelaySeconds: 5
           periodSeconds: 10
+          timeoutSeconds: 5
         livenessProbe:
           tcpSocket:
             port: 5701
           initialDelaySeconds: 15
           periodSeconds: 20
+          timeoutSeconds: 5
+
 ---
 apiVersion: v1
 kind: Service
@@ -109,6 +152,7 @@ spec:
       port: 8080
       targetPort: 8080
       protocol: TCP
+
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -135,14 +179,18 @@ spec:
       containers:
       - name: management-center
         image: hazelcast/management-center:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
           name: http
+          protocol: TCP
         env:
         - name: MC_DEFAULT_CLUSTER
           value: dev
         - name: MC_DEFAULT_CLUSTER_MEMBERS
           value: hazelcast-service.hazelcast.svc.cluster.local:5701
+        - name: JAVA_OPTS
+          value: "-Xms256m -Xmx512m"
         resources:
           requests:
             memory: "512Mi"
@@ -152,23 +200,24 @@ spec:
             cpu: "500m"
         startupProbe:
           httpGet:
-            path: /
+            path: /health
             port: 8080
-          initialDelaySeconds: 10
+          initialDelaySeconds: 15
           periodSeconds: 5
           failureThreshold: 30
         readinessProbe:
           httpGet:
-            path: /
+            path: /health
             port: 8080
-          initialDelaySeconds: 5
+          initialDelaySeconds: 10
           periodSeconds: 10
         livenessProbe:
           httpGet:
-            path: /
+            path: /health
             port: 8080
-          initialDelaySeconds: 30
+          initialDelaySeconds: 45
           periodSeconds: 20
+
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -179,7 +228,6 @@ metadata:
     app: hazelcast-mc
     component: ingress
   annotations:
-    kubernetes.io/ingress.class: "nginx"
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
@@ -203,12 +251,15 @@ spec:
             name: hazelcast-mc-service
             port:
               number: 8080
+
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: hazelcast-tls
   namespace: hazelcast
+  labels:
+    app: hazelcast-mc
 spec:
   secretName: hazelcast-tls
   issuerRef:
