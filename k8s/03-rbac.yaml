@@ -1,0 +1,27 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: hazelcast-discovery
+  namespace: hazelcast
+  labels:
+    app: hazelcast
+rules:
+- apiGroups: [""]
+  resources: ["endpoints", "pods", "services"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: hazelcast-discovery-binding
+  namespace: hazelcast
+  labels:
+    app: hazelcast
+subjects:
+- kind: ServiceAccount
+  name: hazelcast
+  namespace: hazelcast
+roleRef:
+  kind: Role
+  name: hazelcast-discovery
+  apiGroup: rbac.authorization.k8s.io

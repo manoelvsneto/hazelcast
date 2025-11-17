@@ -1,0 +1,14 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: hazelcast-tls
+  namespace: hazelcast
+  labels:
+    app: hazelcast-mc
+spec:
+  secretName: hazelcast-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - hazelcast.archse.eng.br

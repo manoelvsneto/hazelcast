@@ -29,6 +29,14 @@ jobs:
             enableKubectlCommand: true
             arguments: --insecure-skip-tls-verify
             manifests: |
-              $(Build.SourcesDirectory)/k8s/hazelcast-member.yaml
+              $(Build.SourcesDirectory)/k8s/01-namespace.yaml
+              $(Build.SourcesDirectory)/k8s/02-serviceaccount.yaml
+              $(Build.SourcesDirectory)/k8s/03-rbac.yaml
+              $(Build.SourcesDirectory)/k8s/04-hazelcast-service.yaml
+              $(Build.SourcesDirectory)/k8s/05-hazelcast-deployment.yaml
+              $(Build.SourcesDirectory)/k8s/06-mc-service.yaml
+              $(Build.SourcesDirectory)/k8s/07-mc-deployment.yaml
+              $(Build.SourcesDirectory)/k8s/08-ingress.yaml
+              $(Build.SourcesDirectory)/k8s/09-certificate.yaml
               $(Build.SourcesDirectory)/k8s/hazelcast-secrets.yaml
-            containers: 'hazelcast/hazelcast:latest'
+            containers: 'hazelcast/hazelcast:5.5'
