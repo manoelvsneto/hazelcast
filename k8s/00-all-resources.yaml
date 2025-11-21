@@ -251,7 +251,6 @@ spec:
             name: hazelcast-mc-service
             port:
               number: 8080
-
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
